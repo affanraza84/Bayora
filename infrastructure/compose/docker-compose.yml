@@ -1,0 +1,217 @@
+version: '3.8'
+
+# ==============================================================================
+# Bayora Shield: Multi-Enclave Isolation Architecture (Docker Compose)
+# Segregates Red Team, Blue Team, Evaluator, Model Gateway, and Control Plane.
+# ==============================================================================
+
+networks:
+  # Internal network connecting UI, Control Plane, DB, and Audit
+  control-net:
+    driver: bridge
+  # Evaluator orchestration network
+  evaluator-net:
+    driver: bridge
+  # Isolated Red Team network (No outbound access, cannot route to blue-net or db)
+  red-net:
+    driver: bridge
+    internal: true
+  # Isolated Blue Team network (No outbound access, cannot route to red-net or db)
+  blue-net:
+    driver: bridge
+    internal: true
+  # Constrained Model Gateway network
+  model-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  audit_keys:
+  red_artifacts:
+  blue_artifacts:
+
+services:
+  # ----------------------------------------------------------------------------
+  # PostgreSQL Relational Store
+  # ----------------------------------------------------------------------------
+  database:
+    image: postgres:16-alpine
+    container_name: bayora-database
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-bayora_shield}
+      POSTGRES_USER: ${POSTGRES_USER:-bayora_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bayora_secure_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - control-net
+    ports:
+      - "5432:5432"
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+  # ----------------------------------------------------------------------------
+  # Control Plane API (FastAPI)
+  # ----------------------------------------------------------------------------
+  control-plane:
+    build:
+      context: ../../
+      dockerfile: services/control-plane/Dockerfile
+    container_name: bayora-control-plane
+    restart: unless-stopped
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://bayora_admin:bayora_secure_password@database:5432/bayora_shield}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-insecure_dev_jwt_secret_change_in_production}
+      - AUDIT_SERVICE_URL=http://audit-service:8001
+      - EVALUATOR_URL=http://evaluator:8005
+    depends_on:
+      - database
+    networks:
+      - control-net
+      - evaluator-net
+    ports:
+      - "8000:8000"
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+  # ----------------------------------------------------------------------------
+  # Tamper-Evident Audit Service
+  # ----------------------------------------------------------------------------
+  audit-service:
+    build:
+      context: ../../
+      dockerfile: services/audit-service/Dockerfile
+    container_name: bayora-audit-service
+    restart: unless-stopped
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - ED25519_PRIVATE_KEY_PATH=${ED25519_PRIVATE_KEY_PATH:-/etc/bayora/keys/audit_ed25519.key}
+    volumes:
+      - audit_keys:/etc/bayora/keys
+    networks:
+      - control-net
+      - evaluator-net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  # ----------------------------------------------------------------------------
+  # Evaluator Core Orchestrator
+  # ----------------------------------------------------------------------------
+  evaluator:
+    build:
+      context: ../../
+      dockerfile: services/evaluator/Dockerfile
+    container_name: bayora-evaluator
+    restart: unless-stopped
+    environment:
+      - WORKER_RED_URL=http://worker-red-team:8004
+      - WORKER_BLUE_URL=http://worker-blue-team:8002
+      - MODEL_GATEWAY_URL=http://model-gateway:8003
+      - AUDIT_SERVICE_URL=http://audit-service:8001
+    networks:
+      - evaluator-net
+      - red-net
+      - blue-net
+      - model-net
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 1024M
+
+  # ----------------------------------------------------------------------------
+  # Isolated Red Team Worker Enclave
+  # ----------------------------------------------------------------------------
+  worker-red-team:
+    build:
+      context: ../../
+      dockerfile: services/workers/red-team/Dockerfile
+    container_name: bayora-worker-red
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    volumes:
+      - red_artifacts:/artifacts/red:ro
+    networks:
+      - red-net
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+  # ----------------------------------------------------------------------------
+  # Isolated Blue Team Worker Enclave
+  # ----------------------------------------------------------------------------
+  worker-blue-team:
+    build:
+      context: ../../
+      dockerfile: services/workers/blue-team/Dockerfile
+    container_name: bayora-worker-blue
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    volumes:
+      - blue_artifacts:/artifacts/blue:ro
+    networks:
+      - blue-net
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+  # ----------------------------------------------------------------------------
+  # Sandboxed Model Gateway
+  # ----------------------------------------------------------------------------
+  model-gateway:
+    build:
+      context: ../../
+      dockerfile: services/model-gateway/Dockerfile
+    container_name: bayora-model-gateway
+    restart: unless-stopped
+    environment:
+      - DEFAULT_MODEL_PROVIDER=${DEFAULT_MODEL_PROVIDER:-mock}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    networks:
+      - model-net
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+  # ----------------------------------------------------------------------------
+  # Next.js Security Operations Dashboard
+  # ----------------------------------------------------------------------------
+  dashboard:
+    build:
+      context: ../../apps/dashboard
+      dockerfile: Dockerfile
+    container_name: bayora-dashboard
+    restart: unless-stopped
+    environment:
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    ports:
+      - "3000:3000"
+    networks:
+      - control-net
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
