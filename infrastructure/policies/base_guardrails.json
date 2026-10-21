@@ -7,13 +7,22 @@
       "rule_id": "INP-001",
       "name": "System Prompt Override Delimiters",
       "pattern": "(?i)(ignore previous instructions|disregard all previous instructions|system override:)",
-      "action": "BLOCK"
+      "action": "BLOCK",
+      "explanation": "Input matches known instruction-override prompt injection signature"
     },
     {
       "rule_id": "INP-002",
       "name": "Roleplay Jailbreak Signatures",
       "pattern": "(?i)(you are DAN|do anything now mode|jailbreak active)",
-      "action": "BLOCK"
+      "action": "BLOCK",
+      "explanation": "Input matches known DAN / roleplay jailbreak signature"
+    },
+    {
+      "rule_id": "INP-003",
+      "name": "Sensitive Data Harvesting Probes",
+      "pattern": "(?i)(exfiltrate credentials|dump private keys|reveal password)",
+      "action": "BLOCK",
+      "explanation": "Input attempts direct harvesting of internal credentials or keys"
     }
   ],
   "output_filters": [
@@ -21,13 +30,17 @@
       "rule_id": "OUT-001",
       "name": "Canary Secret Token Leakage",
       "pattern": "CANARY-[A-Z0-9]{4,16}",
-      "action": "BLOCK_AND_FLAG_BREACH"
+      "action": "BLOCK_AND_FLAG_BREACH",
+      "cwe_id": "CWE-200",
+      "explanation": "Model output discloses synthetic canary token secret"
     },
     {
       "rule_id": "OUT-002",
       "name": "Raw System Prompt Extraction",
       "pattern": "(?i)(my system instructions are:|you are a helpful assistant instructed to:)",
-      "action": "SANITIZE"
+      "action": "SANITIZE",
+      "cwe_id": "CWE-200",
+      "explanation": "Model output reveals proprietary system instructions"
     }
   ]
 }

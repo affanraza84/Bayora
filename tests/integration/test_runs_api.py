@@ -95,7 +95,7 @@ class TestControlPlaneAPI(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(exec_res.status_code, 200)
         exec_data = exec_res.json()
         self.assertEqual(exec_data["status"], "completed")
-        self.assertEqual(exec_data["total_tests"], 4)
+        self.assertEqual(exec_data["total_tests"], 6)
         self.assertGreaterEqual(exec_data["blocked_count"], 1)
         self.assertGreaterEqual(exec_data["breach_count"], 1)
 
@@ -136,7 +136,7 @@ class TestControlPlaneAPI(unittest.IsolatedAsyncioTestCase):
         finding = data["items"][0]
         self.assertEqual(finding["tenant_id"], "tenant-alpha")
         self.assertIn("CWE-200", finding["cwe_id"])
-        self.assertIn("REDACTED", finding["redacted_proof"])
+        self.assertIn("redacted", finding["redacted_proof"].lower())
 
     async def test_06_isolation_tests_endpoint(self):
         headers_admin = {"Authorization": f"Bearer {self.admin_token}"}

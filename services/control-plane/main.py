@@ -17,6 +17,7 @@ from services.control_plane.routers import (
     findings,
     isolation,
     audit,
+    performance,
 )
 
 
@@ -52,6 +53,7 @@ app.include_router(runs.router)
 app.include_router(findings.router)
 app.include_router(isolation.router)
 app.include_router(audit.router)
+app.include_router(performance.router)
 
 
 @app.exception_handler(Exception)

@@ -46,8 +46,6 @@ services:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - control-net
-    ports:
-      - "5432:5432"
     deploy:
       resources:
         limits:
@@ -75,7 +73,7 @@ services:
       - control-net
       - evaluator-net
     ports:
-      - "8000:8000"
+      - "${CONTROL_PLANE_PORT:-8080}:8000"
     deploy:
       resources:
         limits:

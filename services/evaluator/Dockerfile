@@ -17,4 +17,4 @@ USER bayora:bayora
 
 EXPOSE 8005
 
-CMD ["python", "-c", "print('Bayora Evaluator Service Initialized')"]
+CMD ["python", "-m", "http.server", "8005"]

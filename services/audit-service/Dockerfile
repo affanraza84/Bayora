@@ -17,4 +17,4 @@ USER bayora:bayora
 
 EXPOSE 8001
 
-CMD ["python", "-c", "print('Bayora Audit Service Daemon Initialized')"]
+CMD ["python", "-m", "http.server", "8001"]

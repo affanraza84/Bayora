@@ -17,4 +17,5 @@ USER bayora:bayora
 
 EXPOSE 8004
 
-CMD ["python", "-c", "print('Bayora Red-Team Worker Initialized')"]
+# Run background listening daemon
+CMD ["python", "-m", "http.server", "8004"]

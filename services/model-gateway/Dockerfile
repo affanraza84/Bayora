@@ -17,4 +17,4 @@ USER bayora:bayora
 
 EXPOSE 8003
 
-CMD ["python", "-c", "print('Bayora Model Gateway Initialized')"]
+CMD ["python", "-m", "http.server", "8003"]
