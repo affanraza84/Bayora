@@ -305,6 +305,19 @@ export default function DashboardHome() {
           verify_ed25519_signatures: true,
         }),
       });
+      if (!res.ok) {
+        const errData = await res.json();
+        const errDetail = errData.detail || {};
+        setVerifyResult({
+          verification_status: errDetail.verification_status || 'TAMPERING_DETECTED',
+          hash_chain_continuity: errDetail.error_code || 'BROKEN',
+          ed25519_signature_status: 'FAILED',
+          events_evaluated: errDetail.broken_sequence_number ? `Sequence #${errDetail.broken_sequence_number}` : 0,
+          root_hash: errDetail.message || 'Verification rejected: cryptographic tampering detected',
+        });
+        setErrorMsg(`Audit integrity alarm: ${errDetail.message || 'Tampering detected in audit chain'}`);
+        return;
+      }
       const data = await res.json();
       setVerifyResult(data);
     } catch (e: any) {
@@ -716,13 +729,28 @@ export default function DashboardHome() {
             </div>
 
             {verifyResult && (
-              <div className="bg-[#0B0F17] p-4 rounded border border-amber-900/60 font-mono text-xs space-y-1">
-                <div className="flex items-center justify-between text-amber-400 font-bold">
-                  <span>CHAIN CONTINUITY: {verifyResult.hash_chain_continuity}</span>
-                  <span>ED25519 SIGNATURE: {verifyResult.ed25519_signature_status}</span>
+              <div
+                className={`p-4 rounded border font-mono text-xs space-y-1.5 ${
+                  verifyResult.verification_status === 'VALID'
+                    ? 'bg-emerald-950/40 border-emerald-800/60 text-emerald-300'
+                    : 'bg-red-950/40 border-red-800/60 text-red-300'
+                }`}
+              >
+                <div className="flex items-center justify-between font-bold">
+                  <span className="flex items-center space-x-1.5">
+                    {verifyResult.verification_status === 'VALID' ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    ) : (
+                      <AlertTriangle className="w-4 h-4 text-red-400" />
+                    )}
+                    <span>
+                      CHAIN STATUS: {verifyResult.verification_status} ({verifyResult.hash_chain_continuity})
+                    </span>
+                  </span>
+                  <span>ED25519: {verifyResult.ed25519_signature_status}</span>
                 </div>
-                <div className="text-gray-400">Events Evaluated: {verifyResult.events_evaluated}</div>
-                <div className="text-gray-400 truncate">Root Hash: {verifyResult.root_hash}</div>
+                <div className="text-gray-300">Events Evaluated: {verifyResult.events_evaluated}</div>
+                <div className="text-gray-400 truncate">Digest / Detail: {verifyResult.root_hash}</div>
               </div>
             )}
 

@@ -67,11 +67,16 @@ fi
 
 # 4. Secret Hygiene Check
 echo -n "[*] Scanning for forbidden committed secrets (*.key, *.pem, .env)... "
-SECRET_FILES=$(find . -maxdepth 3 \( -name "*.key" -o -name "*.pem" -o -name ".env" -o -name "id_ed25519*" \) ! -path "*/node_modules/*" ! -path "*/.git/*" || true)
+COMMITTED_SECRETS=$(git ls-files | grep -E '\.(key|pem)$|^\.env$' || true)
+RAW_KEYS=$(find . -maxdepth 3 \( -name "*.key" -o -name "*.pem" -o -name "id_ed25519*" \) ! -path "*/node_modules/*" ! -path "*/.git/*" || true)
 
-if [ -n "$SECRET_FILES" ]; then
-    echo -e "${RED}FAIL! Potential secret files found:${NC}"
-    echo "$SECRET_FILES"
+if [ -n "$COMMITTED_SECRETS" ]; then
+    echo -e "${RED}FAIL! Forbidden secrets tracked in Git:${NC}"
+    echo "$COMMITTED_SECRETS"
+    ERRORS=$((ERRORS + 1))
+elif [ -n "$RAW_KEYS" ]; then
+    echo -e "${RED}FAIL! Potential raw secret files found:${NC}"
+    echo "$RAW_KEYS"
     ERRORS=$((ERRORS + 1))
 else
     echo -e "${GREEN}OK (No forbidden secrets found)${NC}"
@@ -115,7 +120,7 @@ fi
 
 echo ""
 if [ "$ERRORS" -eq 0 ]; then
-    echo -e "${GREEN}${BOLD}✓ All Phase 1 prerequisite checks passed successfully!${NC}"
+    echo -e "${GREEN}${BOLD}✓ All Bayora Shield prerequisite checks passed successfully!${NC}"
     exit 0
 else
     echo -e "${RED}${BOLD}✗ Prerequisite checks failed with $ERRORS errors.${NC}"

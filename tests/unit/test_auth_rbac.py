@@ -116,6 +116,96 @@ class TestAuthRBAC(unittest.TestCase):
         # Should not raise exception
         enforce_tenant_boundary(admin_user, resource_tenant_id="tenant-B")
 
+    def test_jwt_none_algorithm_rejected(self):
+        import jwt as pyjwt
+        # Construct an unsigned token with 'none' algorithm
+        header = {"alg": "none", "typ": "JWT"}
+        payload = {
+            "sub": "attacker",
+            "tid": "tenant-alpha",
+            "role": "platform_admin",
+            "iss": "bayora-shield",
+            "aud": "bayora-api",
+            "exp": 9999999999,
+        }
+        unsigned_token = pyjwt.encode(payload, key="", algorithm="none")
+        with self.assertRaises(HTTPException) as cm:
+            decode_access_token(unsigned_token)
+        self.assertEqual(cm.exception.status_code, 401)
+
+    def test_jwt_invalid_issuer_rejected(self):
+        import jwt as pyjwt
+        from services.control_plane.config import settings
+        payload = {
+            "sub": "user-1",
+            "tid": "tenant-alpha",
+            "role": "red_lead",
+            "iss": "malicious-issuer",
+            "aud": settings.JWT_AUDIENCE,
+            "exp": 9999999999,
+            "iat": 1000000000,
+        }
+        token = pyjwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+        with self.assertRaises(HTTPException) as cm:
+            decode_access_token(token)
+        self.assertEqual(cm.exception.status_code, 401)
+
+    def test_jwt_invalid_audience_rejected(self):
+        import jwt as pyjwt
+        from services.control_plane.config import settings
+        payload = {
+            "sub": "user-1",
+            "tid": "tenant-alpha",
+            "role": "red_lead",
+            "iss": settings.JWT_ISSUER,
+            "aud": "wrong-audience",
+            "exp": 9999999999,
+            "iat": 1000000000,
+        }
+        token = pyjwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+        with self.assertRaises(HTTPException) as cm:
+            decode_access_token(token)
+        self.assertEqual(cm.exception.status_code, 401)
+
+    def test_jwt_missing_required_claims_rejected(self):
+        import jwt as pyjwt
+        from services.control_plane.config import settings
+        # Missing role and tid
+        payload = {
+            "sub": "user-1",
+            "iss": settings.JWT_ISSUER,
+            "aud": settings.JWT_AUDIENCE,
+            "exp": 9999999999,
+        }
+        token = pyjwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+        with self.assertRaises(HTTPException) as cm:
+            decode_access_token(token)
+        self.assertEqual(cm.exception.status_code, 401)
+
+    def test_rbac_auditor_cannot_execute_runs(self):
+        auditor_token = create_access_token(user_id="auditor-1", tenant_id="t1", role="auditor")
+        ctx = decode_access_token(auditor_token)
+        checker = require_permissions("run:execute")
+        with self.assertRaises(HTTPException) as cm:
+            asyncio.run(checker(current_user=ctx))
+        self.assertEqual(cm.exception.status_code, 403)
+
+    def test_rbac_red_operator_cannot_verify_audit(self):
+        red_op_token = create_access_token(user_id="red-op-1", tenant_id="t1", role="red_operator")
+        ctx = decode_access_token(red_op_token)
+        checker = require_permissions("audit:verify")
+        with self.assertRaises(HTTPException) as cm:
+            asyncio.run(checker(current_user=ctx))
+        self.assertEqual(cm.exception.status_code, 403)
+
+    def test_rbac_red_lead_cannot_write_blue_policy(self):
+        red_token = create_access_token(user_id="red-1", tenant_id="t1", role="red_lead")
+        ctx = decode_access_token(red_token)
+        checker = require_permissions("policy:write:blue")
+        with self.assertRaises(HTTPException) as cm:
+            asyncio.run(checker(current_user=ctx))
+        self.assertEqual(cm.exception.status_code, 403)
+
 
 if __name__ == "__main__":
     unittest.main()

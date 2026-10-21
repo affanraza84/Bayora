@@ -156,6 +156,99 @@ class TestAuditCrypto(unittest.TestCase):
         _, other_pub_bytes = generate_ed25519_keypair()
         self.assertFalse(verify_checkpoint(other_pub_bytes, sig_hex, start_seq, end_seq, root_hash, ts))
 
+    def _build_valid_three_event_chain(self):
+        initial_prev = "0000000000000000000000000000000000000000000000000000000000000000"
+        h1 = compute_event_hash(
+            previous_hash=initial_prev,
+            sequence_number=1,
+            event_id="ev-1",
+            actor="user:1",
+            action="RUN_CREATED",
+            resource="run:1",
+            decision="ALLOW",
+            iso_timestamp="2026-10-21T00:00:00Z",
+            policy_version="v1.0",
+            payload_digest=compute_payload_digest("p1"),
+        )
+        e1 = {
+            "sequence_number": 1, "event_id": "ev-1", "actor": "user:1", "action": "RUN_CREATED",
+            "resource": "run:1", "decision": "ALLOW", "timestamp": "2026-10-21T00:00:00Z",
+            "policy_version": "v1.0", "payload_digest": compute_payload_digest("p1"),
+            "previous_hash": initial_prev, "event_hash": h1,
+        }
+
+        h2 = compute_event_hash(
+            previous_hash=h1,
+            sequence_number=2,
+            event_id="ev-2",
+            actor="user:1",
+            action="TEST_EVALUATED",
+            resource="test:1",
+            decision="BLOCK",
+            iso_timestamp="2026-10-21T00:01:00Z",
+            policy_version="v1.0",
+            payload_digest=compute_payload_digest("p2"),
+        )
+        e2 = {
+            "sequence_number": 2, "event_id": "ev-2", "actor": "user:1", "action": "TEST_EVALUATED",
+            "resource": "test:1", "decision": "BLOCK", "timestamp": "2026-10-21T00:01:00Z",
+            "policy_version": "v1.0", "payload_digest": compute_payload_digest("p2"),
+            "previous_hash": h1, "event_hash": h2,
+        }
+
+        h3 = compute_event_hash(
+            previous_hash=h2,
+            sequence_number=3,
+            event_id="ev-3",
+            actor="user:1",
+            action="RUN_COMPLETED",
+            resource="run:1",
+            decision="ALLOW",
+            iso_timestamp="2026-10-21T00:02:00Z",
+            policy_version="v1.0",
+            payload_digest=compute_payload_digest("p3"),
+        )
+        e3 = {
+            "sequence_number": 3, "event_id": "ev-3", "actor": "user:1", "action": "RUN_COMPLETED",
+            "resource": "run:1", "decision": "ALLOW", "timestamp": "2026-10-21T00:02:00Z",
+            "policy_version": "v1.0", "payload_digest": compute_payload_digest("p3"),
+            "previous_hash": h2, "event_hash": h3,
+        }
+        return [e1, e2, e3]
+
+    def test_deletion_of_event_detected(self):
+        chain = self._build_valid_three_event_chain()
+        # Delete event 2 from the middle: [e1, e3]
+        tampered_chain = [chain[0], chain[2]]
+        is_valid, broken_seq, msg = verify_chain(tampered_chain)
+        self.assertFalse(is_valid)
+        self.assertEqual(broken_seq, 3)
+        self.assertTrue("Sequence gap" in msg or "Discontinuity" in msg)
+
+    def test_reordering_of_events_detected(self):
+        chain = self._build_valid_three_event_chain()
+        # Reorder events: [e2, e1, e3]
+        reordered_chain = [chain[1], chain[0], chain[2]]
+        is_valid, broken_seq, msg = verify_chain(reordered_chain)
+        self.assertFalse(is_valid)
+        self.assertTrue(broken_seq > 0)
+
+    def test_insertion_of_unauthorized_event_detected(self):
+        chain = self._build_valid_three_event_chain()
+        # Rogue injected event
+        rogue_event = {
+            "sequence_number": 2, "event_id": "ev-rogue", "actor": "attacker",
+            "action": "POLICY_TAMPER", "resource": "policy:1", "decision": "ALLOW",
+            "timestamp": "2026-10-21T00:01:30Z", "policy_version": "v1.0",
+            "payload_digest": compute_payload_digest("evil"),
+            "previous_hash": chain[0]["event_hash"], "event_hash": "ffff" * 16,
+        }
+        # Injected chain: [e1, rogue, e2, e3]
+        injected_chain = [chain[0], rogue_event, chain[1], chain[2]]
+        is_valid, broken_seq, msg = verify_chain(injected_chain)
+        self.assertFalse(is_valid)
+        self.assertTrue(broken_seq in (2, rogue_event["sequence_number"]))
+
 
 if __name__ == "__main__":
     unittest.main()

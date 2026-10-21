@@ -196,3 +196,22 @@ async def verify_audit_trail(
         root_hash=root_hash,
         verified_at=now,
     )
+
+
+# Alias router for /api/audit-events compatibility
+audit_events_router = APIRouter(prefix="/api/audit-events", tags=["Audit & Cryptographic Verification"])
+audit_events_router.add_api_route(
+    "",
+    list_audit_events,
+    methods=["GET"],
+    response_model=AuditListResponse,
+    summary="List Append-Only Audit Events (Alias)",
+)
+audit_events_router.add_api_route(
+    "/verify",
+    verify_audit_trail,
+    methods=["POST"],
+    response_model=AuditVerifyResponse,
+    summary="Verify Audit Chain & Checkpoint Signatures (Alias)",
+)
+

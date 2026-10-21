@@ -53,6 +53,7 @@ app.include_router(runs.router)
 app.include_router(findings.router)
 app.include_router(isolation.router)
 app.include_router(audit.router)
+app.include_router(audit.audit_events_router)
 app.include_router(performance.router)
 
 

@@ -96,6 +96,13 @@ def verify_chain(events: List[Dict[str, Any]]) -> Tuple[bool, int, str]:
                 )
         else:
             prev_event = events[i - 1]
+            expected_seq = prev_event["sequence_number"] + 1
+            if seq != expected_seq:
+                return (
+                    False,
+                    seq,
+                    f"Sequence gap or reordering at sequence {seq}: expected sequence {expected_seq}, found {seq}",
+                )
             expected_prev = prev_event["event_hash"]
             if event["previous_hash"] != expected_prev:
                 return (

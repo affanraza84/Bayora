@@ -11,12 +11,20 @@ from httpx import AsyncClient, ASGITransport
 from sqlalchemy import update
 
 from services.control_plane.main import app
-from services.control_plane.db.session import init_db, AsyncSessionLocal
-from services.control_plane.db.models import AuditEvent
+from services.control_plane.db.session import init_db, AsyncSessionLocal, engine
+from services.control_plane.db.models import AuditEvent, Base
 from services.control_plane.auth.jwt import create_access_token
 
 
 class TestControlPlaneAPI(unittest.IsolatedAsyncioTestCase):
+    @classmethod
+    def setUpClass(cls):
+        async def reset_db():
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.drop_all)
+                await conn.run_sync(Base.metadata.create_all)
+        asyncio.run(reset_db())
+
     async def asyncSetUp(self):
         # Ensure database tables exist
         await init_db()
@@ -196,25 +204,32 @@ class TestControlPlaneAPI(unittest.IsolatedAsyncioTestCase):
     async def test_08_tamper_detection_in_database(self):
         headers_auditor = {"Authorization": f"Bearer {self.auditor_token}"}
 
-        # Inject an event and intentionally mutate its decision directly in the DB
-        async with AsyncSessionLocal() as session:
-            # Modify decision of sequence 1
-            await session.execute(
-                update(AuditEvent).where(AuditEvent.sequence_number == 1).values(decision="MUTATED_DECISION")
-            )
-            await session.commit()
+        # Intentionally mutate decision of sequence 1 directly in DB to simulate tampering
+        try:
+            async with AsyncSessionLocal() as session:
+                await session.execute(
+                    update(AuditEvent).where(AuditEvent.sequence_number == 1).values(decision="MUTATED_DECISION")
+                )
+                await session.commit()
 
-        # Invoking audit verification must detect the modified row and return 422 Unprocessable Entity
-        verify_res = await self.client.post(
-            "/api/audit/verify",
-            json={"start_sequence": 1, "verify_ed25519_signatures": True},
-            headers=headers_auditor,
-        )
-        self.assertEqual(verify_res.status_code, 422)
-        err = verify_res.json()["detail"]
-        self.assertEqual(err["verification_status"], "TAMPERING_DETECTED")
-        self.assertEqual(err["error_code"], "HASH_CHAIN_BROKEN")
-        self.assertEqual(err["broken_sequence_number"], 1)
+            # Invoking audit verification must detect the modified row and return 422 Unprocessable Entity
+            verify_res = await self.client.post(
+                "/api/audit/verify",
+                json={"start_sequence": 1, "verify_ed25519_signatures": True},
+                headers=headers_auditor,
+            )
+            self.assertEqual(verify_res.status_code, 422)
+            err = verify_res.json()["detail"]
+            self.assertEqual(err["verification_status"], "TAMPERING_DETECTED")
+            self.assertEqual(err["error_code"], "HASH_CHAIN_BROKEN")
+            self.assertEqual(err["broken_sequence_number"], 1)
+        finally:
+            # Restore sequence 1 decision so test suite remains idempotent across repeated runs
+            async with AsyncSessionLocal() as session:
+                await session.execute(
+                    update(AuditEvent).where(AuditEvent.sequence_number == 1).values(decision="ALLOW")
+                )
+                await session.commit()
 
 
 if __name__ == "__main__":
