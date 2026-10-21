@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bayora-shield"
-version = "0.1.0"
+version = "0.2.0"
 description = "Bayora Shield: Secure AI Adversarial Testing Infrastructure"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -16,6 +16,8 @@ dependencies = [
     "pydantic-settings>=2.2.1",
     "sqlalchemy[asyncio]>=2.0.28",
     "asyncpg>=0.29.0",
+    "aiosqlite>=0.20.0",
+    "alembic>=1.13.0",
     "cryptography>=42.0.5",
     "pyjwt>=2.8.0",
     "httpx>=0.27.0"

@@ -1,68 +1,70 @@
 """
 Bayora Shield - Control Plane Service (FastAPI)
-Foundation Entrypoint (Phase 1)
+Functional Security Core & API Orchestrator (Phase 2)
 """
 
-from datetime import datetime, timezone
-from fastapi import FastAPI, status
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import Dict
+from fastapi.responses import JSONResponse
+
+from services.control_plane.config import settings
+from services.control_plane.db.session import init_db
+from services.control_plane.routers import (
+    health,
+    auth,
+    runs,
+    findings,
+    isolation,
+    audit,
+)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Ensure database schema is ready on startup
+    await init_db()
+    yield
+
 
 app = FastAPI(
     title="Bayora Shield Control Plane",
-    description="Trusted control plane API for AI adversarial evaluation platform",
-    version="0.1.0-phase1",
+    description="Trusted control plane API for AI adversarial evaluation platform with multi-enclave isolation and tamper-evident audit logging.",
+    version="0.2.0-phase2",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
-# CORS configuration for Dashboard integration
+# CORS middleware for Next.js dashboard
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Restrict to dashboard origin in production
+    allow_origins=settings.CORS_ORIGINS + ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# Include API Routers
+app.include_router(health.router)
+app.include_router(auth.router)
+app.include_router(runs.router)
+app.include_router(findings.router)
+app.include_router(isolation.router)
+app.include_router(audit.router)
 
-class HealthResponse(BaseModel):
-    status: str
-    timestamp: datetime
-    services: Dict[str, str]
-    version: str
 
-
-@app.get(
-    "/api/health",
-    response_model=HealthResponse,
-    status_code=status.HTTP_200_OK,
-    tags=["Diagnostics"],
-    summary="System Health & Diagnostic Status",
-)
-async def get_health():
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
     """
-    Returns platform health, component operational status, and API version.
+    Sanitizes unhandled exceptions to prevent database connection string or
+    internal stack trace leakage in accordance with Threat 9 (Credential Leakage).
     """
-    return HealthResponse(
-        status="healthy",
-        timestamp=datetime.now(timezone.utc),
-        services={
-            "database": "configured",
-            "audit_service": "configured",
-            "model_gateway": "configured",
+    # Return structured error response without internal details
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={
+            "detail": "Internal server error occurred. Transaction rolled back.",
+            "type": "InternalServerError",
         },
-        version="0.1.0-phase1",
     )
-
-
-# Note: Additional endpoints specified in docs/api-contract.md:
-# - POST /api/runs
-# - POST /api/runs/{id}/execute
-# - GET /api/runs/{id}
-# - GET /api/findings
-# - POST /api/isolation-tests
-# - GET /api/audit/events
-# - POST /api/audit/verify
-# are normative specifications scheduled for implementation in Phase 2.
