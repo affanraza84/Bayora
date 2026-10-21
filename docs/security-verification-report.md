@@ -49,15 +49,30 @@ Automated testing was executed using Python 3.14 on macOS with Docker Compose ac
 ================================== TEST TOTALS ==================================
   Suite Category                   Total Tests    Passed    Failed    Blocked
   -----------------------------------------------------------------------------
-  1. Unit Tests (Crypto, RBAC)              23        23         0          0
+  1. Unit Tests (Crypto, RBAC)              25        25         0          0
   2. Enclave Isolation Tests (Docker)       11        11         0          0
   3. Adversarial & Guardrails               10        10         0          0
   4. Integration Tests (API, DB)             8         8         0          0
   5. Performance Tests (Benchmarks)          3         3         0          0
   -----------------------------------------------------------------------------
-  TOTAL AUTOMATED TESTS                     55        55         0          0
+  TOTAL AUTOMATED TESTS                     57        57         0          0
 =================================================================================
 ```
+
+### Cryptographic Architecture Reconciliation
+
+Bayora Shield differentiates three cryptographic mechanisms across three operational domains:
+
+1. **SHA-256 Canonical Hash-Chaining (`hashlib.sha256`):**
+   - **Operational Domain:** Audit event link-to-link continuity and artifact checksums.
+   - **Guarantee:** Strict Merkle-style chronological chain continuity. Every event binds `H_i = SHA256(canonical_json(previous_hash, sequence_number, ...))`. Detects in-database row mutation, event deletion, or reordering.
+   - **Boundary Limitation:** A hash chain alone does not prevent an attacker with full database write access from recomputing a fake alternate history branch from scratch unless anchored to an external signature.
+2. **Ed25519 Digital Checkpoint Signatures (`cryptography.hazmat...ed25519`):**
+   - **Operational Domain:** Audit checkpoints and exported `EvidenceBundle` archives.
+   - **Guarantee:** Asymmetric non-repudiation. Private signing keys are held strictly in memory/isolated volumes (`/etc/bayora/keys`) and never written to database tables. Checkpoint payloads `(start_seq, end_seq, root_hash, timestamp)` are signed with Ed25519. Even an attacker with complete PostgreSQL write access cannot forge an Ed25519 signature over modified events.
+3. **HMAC-SHA256 Symmetric Tokens (`PyJWT` / HS256):**
+   - **Operational Domain:** User authentication sessions and internal service identity assertion.
+   - **Guarantee:** Fast bearer token authorization and RBAC role validation with issuer (`bayora-shield`) and audience (`bayora-shield-api`) verification.
 
 ---
 
@@ -141,7 +156,7 @@ docker compose -f infrastructure/compose/docker-compose.yml up -d
 # 3. Apply database schema migrations
 .venv/bin/alembic upgrade head
 
-# 4. Run automated security test suite (55 tests)
+# 4. Run automated security test suite (57 tests)
 make test-security
 
 # 5. Run end-to-end automated demo script

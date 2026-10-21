@@ -356,7 +356,7 @@ export default function DashboardHome() {
             <div className="flex items-center space-x-2">
               <span className="font-bold text-white tracking-wider text-lg">BAYORA SHIELD</span>
               <span className="text-xs font-mono uppercase px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-400 border border-emerald-800/40">
-                Phase 3 Live Pipeline Active
+                Hackathon Release v0.2.0 • Verified Live
               </span>
             </div>
             <p className="text-xs text-gray-400 font-mono">Multi-Enclave AI Adversarial Testing Infrastructure</p>
@@ -617,7 +617,7 @@ export default function DashboardHome() {
               <div className="flex items-center space-x-2">
                 <Lock className="w-4 h-4 text-red-400" />
                 <h3 className="font-semibold text-sm uppercase tracking-wider text-white">
-                  Reproducible Isolation Lab Scenarios (Phase 3)
+                  Reproducible Enclave Isolation Lab Scenarios
                 </h3>
               </div>
               <button
@@ -888,7 +888,7 @@ export default function DashboardHome() {
 
       {/* Footer */}
       <footer className="border-t border-[#1F2937] bg-[#0E1420] px-6 py-4 text-center text-xs text-gray-500 font-mono">
-        Bayora Shield — Phase 3 Live Pipeline & Container Isolation Verified
+        Bayora Shield v0.2.0 — Cryptographic Audit & Multi-Enclave Isolation Platform
       </footer>
     </div>
   );

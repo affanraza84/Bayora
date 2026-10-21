@@ -250,5 +250,126 @@ class TestAuditCrypto(unittest.TestCase):
         self.assertTrue(broken_seq in (2, rogue_event["sequence_number"]))
 
 
+    def test_evidence_bundle_signature_verification_and_tampering(self):
+        """Tests that evidence bundle signatures verify correctly and fail on any tampering."""
+        priv_bytes, pub_bytes = generate_ed25519_keypair()
+        run_id = "run-test-1234"
+        start_seq = 1
+        end_seq = 12
+        bundle_checksum_sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        timestamp = "2026-10-21T18:00:00.000000Z"
+
+        sig_hex = sign_checkpoint(
+            private_key_bytes=priv_bytes,
+            start_seq=start_seq,
+            end_seq=end_seq,
+            root_hash=bundle_checksum_sha256,
+            timestamp=timestamp,
+        )
+
+        # 1. Genuine evidence bundle signature passes verification
+        self.assertTrue(
+            verify_checkpoint(
+                public_key_bytes=pub_bytes,
+                signature_hex=sig_hex,
+                start_seq=start_seq,
+                end_seq=end_seq,
+                root_hash=bundle_checksum_sha256,
+                timestamp=timestamp,
+            )
+        )
+
+        # 2. Tampered bundle checksum is rejected
+        tampered_checksum = "f" * 64
+        self.assertFalse(
+            verify_checkpoint(
+                public_key_bytes=pub_bytes,
+                signature_hex=sig_hex,
+                start_seq=start_seq,
+                end_seq=end_seq,
+                root_hash=tampered_checksum,
+                timestamp=timestamp,
+            )
+        )
+
+        # 3. Tampered sequence range is rejected
+        self.assertFalse(
+            verify_checkpoint(
+                public_key_bytes=pub_bytes,
+                signature_hex=sig_hex,
+                start_seq=start_seq,
+                end_seq=end_seq + 1,
+                root_hash=bundle_checksum_sha256,
+                timestamp=timestamp,
+            )
+        )
+
+        # 4. Tampered timestamp is rejected
+        self.assertFalse(
+            verify_checkpoint(
+                public_key_bytes=pub_bytes,
+                signature_hex=sig_hex,
+                start_seq=start_seq,
+                end_seq=end_seq,
+                root_hash=bundle_checksum_sha256,
+                timestamp="2026-10-21T19:00:00.000000Z",
+            )
+        )
+
+        # 5. Untrusted third-party public key rejects signature
+        _, rogue_pub_bytes = generate_ed25519_keypair()
+        self.assertFalse(
+            verify_checkpoint(
+                public_key_bytes=rogue_pub_bytes,
+                signature_hex=sig_hex,
+                start_seq=start_seq,
+                end_seq=end_seq,
+                root_hash=bundle_checksum_sha256,
+                timestamp=timestamp,
+            )
+        )
+
+    def test_event_payload_digest_tamper_detected(self):
+        """Tests that modifying payload content changes digest and breaks event hash."""
+        original_prompt = "Adversarial Prompt v1"
+        altered_prompt = "Adversarial Prompt v2 (tampered)"
+
+        digest1 = compute_payload_digest(original_prompt)
+        digest2 = compute_payload_digest(altered_prompt)
+        self.assertNotEqual(digest1, digest2)
+
+        # Build valid event with digest1
+        initial_prev = "0000000000000000000000000000000000000000000000000000000000000000"
+        h1 = compute_event_hash(
+            previous_hash=initial_prev,
+            sequence_number=1,
+            event_id="ev-1",
+            actor="user:1",
+            action="RUN_CREATED",
+            resource="run:1",
+            decision="ALLOW",
+            iso_timestamp="2026-10-21T00:00:00Z",
+            policy_version="v1.0",
+            payload_digest=digest1,
+        )
+        event = {
+            "sequence_number": 1,
+            "event_id": "ev-1",
+            "actor": "user:1",
+            "action": "RUN_CREATED",
+            "resource": "run:1",
+            "decision": "ALLOW",
+            "timestamp": "2026-10-21T00:00:00Z",
+            "policy_version": "v1.0",
+            "payload_digest": digest2,  # Tampered digest without recomputing event_hash
+            "previous_hash": initial_prev,
+            "event_hash": h1,
+        }
+        is_valid, broken_seq, msg = verify_chain([event])
+        self.assertFalse(is_valid)
+        self.assertEqual(broken_seq, 1)
+        self.assertIn("Tampering detected at sequence 1", msg)
+
+
 if __name__ == "__main__":
     unittest.main()

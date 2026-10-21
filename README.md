@@ -1,10 +1,10 @@
 # Bayora Shield: AI Adversarial Testing & Multi-Enclave Isolation Platform
 
-[![Security Tests](https://img.shields.io/badge/Security_Tests-55%20Passing-emerald)](tests/)
+[![Security Tests](https://img.shields.io/badge/Security_Tests-57%20Passing-emerald)](tests/)
 [![Enclave Isolation](https://img.shields.io/badge/Enclaves-Docker%20Bridge%20Isolated-blue)](#)
 [![Audit Ledger](https://img.shields.io/badge/Audit-SHA--256%20Chained%20%2B%20Ed25519-amber)](#)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Hackathon Status](https://img.shields.io/badge/Status-Hackathon%20Ready%20(Phase%205)-purple)](#)
+[![Hackathon Status](https://img.shields.io/badge/Status-Hackathon%20Final%20Submission-purple)](#)
 
 > **Mission:**  
 > **Bayora Shield** is an adversarial security testing platform designed to evaluate AI models and applications against red-team attacks without exposing proprietary defensive rules (Blue Team), leaking sensitive canary secrets, or cross-contaminating session state between turns.
@@ -18,6 +18,19 @@ When testing generative AI models for vulnerabilities (prompt injection, jailbre
 2. **Adversarial Payload Leakage:** Red teams need proof of vulnerabilities without leaking exploit payloads to unauthorized actors prior to responsible disclosure.
 3. **Session Contamination:** LLM providers frequently retain conversational cache or session context across API turns, leading to false positives or cross-test data leaks.
 4. **Audit Evidence Tampering:** Without cryptographic integrity proofs, test records and compliance logs can be modified or repudiated after a breach.
+
+### Why Bayora Shield vs. Ordinary LLM Evaluation Scripts?
+
+Most existing AI evaluation tools (e.g. Promptfoo, DeepEval, PyRIT) run evaluations inside a single Python script or unconstrained container where all parties share access:
+
+| Dimension | Ordinary Evaluation Scripts / Frameworks | Bayora Shield Enclave Platform |
+| :--- | :--- | :--- |
+| **Execution Boundary** | Single flat runtime; prompt code has full access to defense rules. | **Hardware/Container Enclaves**: Red, Blue, and Model execute in segregated namespaces. |
+| **Network Reachability** | Unrestricted Internet; scripts can exfiltrate keys to arbitrary endpoints. | **L3 Segregated Bridges**: Workers have zero cross-talk route (`internal: true`). |
+| **Defensive Privacy** | Red teams inspect regex/rules in memory or config files. | **Zero-Knowledge Defense**: Blue rules run in an isolated enclave; only verdict is returned. |
+| **Audit Verifiability** | Plain CSV/JSON files that anyone can edit or delete. | **SHA-256 Hash Chained + Ed25519 Signed**: Tamper-evident mathematical proof. |
+| **Model Context** | Session cookies and persistent memory persist between tests. | **Enforced Statelessness**: Fresh ephemeral UUID tokens per prompt; zero bleed. |
+| **Evidence Custody** | Unsigned logs easily disputed during post-breach audits. | **Cryptographic Evidence Bundles**: Asymmetrically signed with Ed25519 for non-repudiation. |
 
 ---
 
@@ -148,12 +161,12 @@ cp .env.example .env
 
 ## 6. How to Run the Security Suite & Demo
 
-### 1. Run Automated Security Test Suite (55 Tests)
+### 1. Run Automated Security Test Suite (57 Tests)
 ```bash
 make test-security
 ```
 Executes all 5 test suites across unit, isolation, adversarial, integration, and performance layers:
-- **Unit Tests (23 tests):** SHA-256 hash chaining, sequence gap tamper detection, event deletion/reordering, Ed25519 checkpoint signing, JWT algorithm none rejection, issuer/audience validation, RBAC boundaries.
+- **Unit Tests (25 tests):** SHA-256 hash chaining, sequence gap tamper detection, event deletion/reordering, Ed25519 checkpoint signing, EvidenceBundle verification, tampered payload digest detection, JWT algorithm none rejection, issuer/audience validation, RBAC boundaries.
 - **Enclave Isolation Tests (11 tests):** Live Docker L3 IP routing drops, DNS failure verification, absent Docker socket, read-only root filesystems, cgroup v2 memory/CPU limits, and port binding audits.
 - **Adversarial & Guardrail Tests (10 tests):** Harmless prompt injection (`INP-001`), roleplay escape (`INP-002`), credential harvesting (`INP-003`), canary disclosure redaction (`OUT-001`), system prompt leakage (`OUT-002`), zero false positives on benign queries.
 - **Integration Tests (8 tests):** Control plane health, authentication, run lifecycle, duplicate execution guard, cross-tenant IDOR protection, findings, isolation lab endpoints.
@@ -179,13 +192,16 @@ Open **[http://localhost:3000](http://localhost:3000)** in your browser.
 
 ## 7. 3-Minute Hackathon Judge Demo Script
 
+> **Full Word-for-Word Script & Visual Actions:** See [`docs/demo-script.md`](docs/demo-script.md)
+
 | Timing | Section | Actions & Talking Points |
 | :--- | :--- | :--- |
-| **0:00 - 0:45** | **Problem & Threat Model** | Show `docs/threat-model.md`. Explain the core dilemma: How do red teams test AI models without stealing blue team defense rules or leaking proprietary model canary tokens? Point to the 3-enclave model. |
-| **0:45 - 1:30** | **Live Enclave Isolation** | Open terminal and run `make test-isolation`. Show live Docker runtime checks: `worker-red` attempting TCP connect to `worker-blue` triggers `OSError: [Errno 101] Network is unreachable` at the kernel level. Show cgroup v2 512MB RAM ceiling and read-only root filesystem. |
-| **1:30 - 2:15** | **Adversarial Evaluation Run** | In dashboard (or `./scripts/demo.sh`), click **"Provision New Run"** and **"Execute"**. Point out: 5 attacks blocked by Blue Guardrails; 1 Model Safety finding detected (CWE-200 Canary disclosure caught and sanitized); **0 Enclave Escapes** (enclave boundaries 100% intact). |
-| **2:15 - 2:45** | **Cryptographic Audit Ledger** | Switch to **Audit Explorer** tab. Click **"Verify Cryptographic Chain"**. Show green badge confirming unbroken SHA-256 chain continuity and valid Ed25519 digital signature. Explain tamper-detection: changing even 1 byte in PostgreSQL immediately triggers a sequence gap alarm. |
-| **2:45 - 3:00** | **Limitations & Roadmap** | Be honest and credible: Enclaves currently run on Linux kernel namespaces and cgroups (Docker). Production deployment roadmap requires hardware MicroVMs (AWS Firecracker / gVisor) and HSM key custody. |
+| **0:00 - 0:25** | **Problem & Solution** | Show `docs/threat-model.md`. Explain the core dilemma: How do red teams test AI models without stealing blue team defense rules or leaking proprietary model canary tokens? Introduce Bayora Shield's multi-enclave model. |
+| **0:25 - 0:55** | **Architecture & Boundaries** | Highlight Enclave Topology in dashboard. Point to 3 isolated enclaves: Red Worker, Blue Worker, and Model Gateway separated by internal Linux bridge networks with dropped kernel routes and cgroup quotas. |
+| **0:55 - 1:35** | **Trigger Adversarial Evaluation** | In dashboard (or `./scripts/demo.sh`), click **"Provision New Run"** and **"Execute"**. Point out: 5 attacks blocked by Blue Guardrails before reaching LLM (`INP-001` prompt injection, `INP-002` jailbreak, `INP-003` exfiltration). |
+| **1:35 - 2:05** | **Canary Finding (CWE-200)** | In Findings tab, explain Test Case 4: Canary query elicited model disclosure, but Blue Egress Guardrail `OUT-001` intercepted and redacted it to `[REDACTED_BY_BLUE_GUARDRAIL]`. Emphasize: **Model Safety Vulnerability (CWE-200)**, **NOT** an infrastructure escape (0 Enclave Breaches). |
+| **2:05 - 2:35** | **Isolation Lab & Cryptographic Audit** | Run Isolation Lab: Show Red-to-Blue network probe dropped (`Errno 101`) and read-only root verified. In Audit Explorer, click **"Verify Cryptographic Chain"**: Show green `VALID` badge, unbroken SHA-256 chain, and Ed25519 signature proof. |
+| **2:35 - 3:00** | **Performance, Limits & Roadmap** | Review benchmark metrics (1.4ms guardrail overhead). Explain prototype limitations (Docker cgroups vs. AWS Firecracker microVMs; mock model vs. live LLMs). |
 
 ---
 
@@ -210,10 +226,33 @@ To maintain absolute credibility, Bayora Shield explicitly distinguishes **empir
 
 ---
 
-## 9. Security Verification Report
+## 9. Deployment Decision & Cloud Security Model
+
+### Deployment Decision: Local Evaluation by Default
+For this hackathon evaluation, Bayora Shield is packaged and verified as a **reproducible local Docker Compose multi-enclave cluster**.  
+**Rationale:**
+1. **Zero Attack Surface:** Running locally ensures internal enclaves, the database, and audit keys remain strictly unexposed to the public Internet during evaluation.
+2. **Zero Secrets in Transit:** Evaluation requires no cloud credentials or third-party API keys.
+3. **Deterministic Performance:** Local execution ensures tests and latency benchmarks are reproducible without cloud network jitter.
+
+### Production Cloud Deployment Plan (If Public URL Required)
+If a public cloud deployment is required by hackathon judges, execute the following hardened deployment architecture:
+1. **Ingress Layer:** Deploy Next.js Dashboard to Vercel or AWS CloudFront/S3 with TLS 1.3 termination.
+2. **Control Plane:** Deploy FastAPI backend to AWS ECS Fargate or Fly.io behind an Application Load Balancer with strict rate limiting and OAuth2/OIDC.
+3. **Private VPC & Subnets:**
+   - Place `bayora-database` and `bayora-audit-service` in isolated private subnets with Security Groups allowing traffic *only* from the Control Plane task.
+   - Run worker containers inside dedicated AWS ECS tasks with task-level IAM roles and AWS VPC CNI for per-task security group isolation.
+4. **Secrets Management:** Ingest `JWT_SECRET_KEY` and `ED25519_PRIVATE_KEY` directly from AWS Secrets Manager or HashiCorp Vault.
+5. **Worker Hardening:** Run worker tasks using AWS Firecracker microVMs (via AWS Fargate) to guarantee hardware-assisted hypervisor isolation rather than shared Linux container namespaces.
+
+---
+
+## 10. Submission Deliverables & Documentation Index
 
 For complete raw terminal logs, failure mode analyses, and cryptographic verification evidence, inspect:
-- [`docs/security-verification-report.md`](docs/security-verification-report.md)
-- [`docs/architecture.md`](docs/architecture.md)
-- [`docs/threat-model.md`](docs/threat-model.md)
-- [`docs/access-control-matrix.md`](docs/access-control-matrix.md)
+- [`docs/demo-script.md`](docs/demo-script.md) — 3-Minute timed spoken script with exact UI clicks and fallback procedures
+- [`docs/security-verification-report.md`](docs/security-verification-report.md) — Independent security audit, cgroup limits, and live network probe logs
+- [`docs/architecture.md`](docs/architecture.md) — Multi-enclave system design, trust boundaries, and network topology
+- [`docs/threat-model.md`](docs/threat-model.md) — STRIDE threat analysis, trust boundaries, and residual risk registry
+- [`docs/access-control-matrix.md`](docs/access-control-matrix.md) — RBAC role permissions, tenant isolation, and API route security
+- [`docs/api-contract.md`](docs/api-contract.md) — OpenAPI REST contract schemas for all endpoints
