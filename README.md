@@ -1,6 +1,6 @@
 # Bayora Shield: AI Adversarial Testing & Multi-Enclave Isolation Platform
 
-[![Security Tests](https://img.shields.io/badge/Security_Tests-57%20Passing-emerald)](tests/)
+[![Security Tests](https://img.shields.io/badge/Security_Tests-62%20Passing-emerald)](tests/)
 [![Enclave Isolation](https://img.shields.io/badge/Enclaves-Docker%20Bridge%20Isolated-blue)](#)
 [![Audit Ledger](https://img.shields.io/badge/Audit-SHA--256%20Chained%20%2B%20Ed25519-amber)](#)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
@@ -25,7 +25,7 @@ Most existing AI evaluation tools (e.g. Promptfoo, DeepEval, PyRIT) run evaluati
 
 | Dimension | Ordinary Evaluation Scripts / Frameworks | Bayora Shield Enclave Platform |
 | :--- | :--- | :--- |
-| **Execution Boundary** | Single flat runtime; prompt code has full access to defense rules. | **Hardware/Container Enclaves**: Red, Blue, and Model execute in segregated namespaces. |
+| **Execution Boundary** | Single flat runtime; prompt code has full access to defense rules. | **Container Enclaves (Namespaces & Cgroups)**: Red, Blue, and Model execute in segregated namespaces. |
 | **Network Reachability** | Unrestricted Internet; scripts can exfiltrate keys to arbitrary endpoints. | **L3 Segregated Bridges**: Workers have zero cross-talk route (`internal: true`). |
 | **Defensive Privacy** | Red teams inspect regex/rules in memory or config files. | **Zero-Knowledge Defense**: Blue rules run in an isolated enclave; only verdict is returned. |
 | **Audit Verifiability** | Plain CSV/JSON files that anyone can edit or delete. | **SHA-256 Hash Chained + Ed25519 Signed**: Tamper-evident mathematical proof. |
@@ -161,22 +161,22 @@ cp .env.example .env
 
 ## 6. How to Run the Security Suite & Demo
 
-### 1. Run Automated Security Test Suite (57 Tests)
+### 1. Run Automated Security Test Suite (62 Tests)
 ```bash
 make test-security
 ```
 Executes all 5 test suites across unit, isolation, adversarial, integration, and performance layers:
-- **Unit Tests (25 tests):** SHA-256 hash chaining, sequence gap tamper detection, event deletion/reordering, Ed25519 checkpoint signing, EvidenceBundle verification, tampered payload digest detection, JWT algorithm none rejection, issuer/audience validation, RBAC boundaries.
+- **Unit Tests (28 tests):** SHA-256 hash chaining, sequence gap tamper detection, event deletion/reordering, KeyRegistry trusted/untrusted public key verification, key rotation historical validation, stored checkpoint tamper detection, EvidenceBundle verification, tampered payload digest detection, JWT algorithm none rejection, issuer/audience validation, RBAC boundaries.
 - **Enclave Isolation Tests (11 tests):** Live Docker L3 IP routing drops, DNS failure verification, absent Docker socket, read-only root filesystems, cgroup v2 memory/CPU limits, and port binding audits.
 - **Adversarial & Guardrail Tests (10 tests):** Harmless prompt injection (`INP-001`), roleplay escape (`INP-002`), credential harvesting (`INP-003`), canary disclosure redaction (`OUT-001`), system prompt leakage (`OUT-002`), zero false positives on benign queries.
-- **Integration Tests (8 tests):** Control plane health, authentication, run lifecycle, duplicate execution guard, cross-tenant IDOR protection, findings, isolation lab endpoints.
+- **Integration Tests (10 tests):** Control plane health, authentication, run lifecycle, duplicate execution guard, cross-tenant IDOR protection, findings, isolation lab endpoints, stored checkpoint tamper rejection, and stored evidence bundle signature verification.
 - **Performance Tests (3 tests):** Latency percentiles, resource limit assertions, synthetic pipeline benchmarks.
 
 ### 2. Run the 9-Step Automated Judge Demo Script
 ```bash
 ./scripts/demo.sh
 ```
-Executes the complete end-to-end evaluation, launches container probes, runs the adversarial pipeline, executes the 6 isolation scenarios, and verifies the cryptographic audit chain.
+Executes the complete end-to-end evaluation, launches container probes, runs the adversarial pipeline, executes the 6 isolation scenarios, and verifies stored cryptographic audit checkpoints and evidence bundles against trusted public keys.
 
 ### 3. Launch the Web Dashboard
 ```bash
@@ -200,8 +200,8 @@ Open **[http://localhost:3000](http://localhost:3000)** in your browser.
 | **0:25 - 0:55** | **Architecture & Boundaries** | Highlight Enclave Topology in dashboard. Point to 3 isolated enclaves: Red Worker, Blue Worker, and Model Gateway separated by internal Linux bridge networks with dropped kernel routes and cgroup quotas. |
 | **0:55 - 1:35** | **Trigger Adversarial Evaluation** | In dashboard (or `./scripts/demo.sh`), click **"Provision New Run"** and **"Execute"**. Point out: 5 attacks blocked by Blue Guardrails before reaching LLM (`INP-001` prompt injection, `INP-002` jailbreak, `INP-003` exfiltration). |
 | **1:35 - 2:05** | **Canary Finding (CWE-200)** | In Findings tab, explain Test Case 4: Canary query elicited model disclosure, but Blue Egress Guardrail `OUT-001` intercepted and redacted it to `[REDACTED_BY_BLUE_GUARDRAIL]`. Emphasize: **Model Safety Vulnerability (CWE-200)**, **NOT** an infrastructure escape (0 Enclave Breaches). |
-| **2:05 - 2:35** | **Isolation Lab & Cryptographic Audit** | Run Isolation Lab: Show Red-to-Blue network probe dropped (`Errno 101`) and read-only root verified. In Audit Explorer, click **"Verify Cryptographic Chain"**: Show green `VALID` badge, unbroken SHA-256 chain, and Ed25519 signature proof. |
-| **2:35 - 3:00** | **Performance, Limits & Roadmap** | Review benchmark metrics (1.4ms guardrail overhead). Explain prototype limitations (Docker cgroups vs. AWS Firecracker microVMs; mock model vs. live LLMs). |
+| **2:05 - 2:35** | **Isolation Lab & Cryptographic Audit** | Run Isolation Lab: Show Red-to-Blue network probe dropped (`Errno 101`) and read-only root verified. In Audit Explorer, click **"Verify Cryptographic Chain"**: Show green `VALID` badge, unbroken SHA-256 chain, and genuine stored Ed25519 checkpoint verification against the trusted key registry. |
+| **2:35 - 3:00** | **Performance, Limits & Roadmap** | Review benchmark metrics (1.4ms guardrail overhead). Explain prototype limitations (Docker cgroups vs. AWS Firecracker microVMs; mock model vs. live LLMs; local key registry vs. cloud HSM). |
 
 ---
 
@@ -215,6 +215,7 @@ To maintain absolute credibility, Bayora Shield explicitly distinguishes **empir
 - **Cgroup Quotas:** Hard memory ceilings (512MB) and CPU quotas (1.0 CPU) verified directly in `/sys/fs/cgroup/memory.max`.
 - **Zero Host Port Exposure:** Internal databases and workers bind zero public host ports.
 - **Stateless LLM Context:** Successive turns generate clean ephemeral UUIDs; no prior turn memory is retained.
+- **Stored Audit Verification:** Checkpoints and evidence bundles are signed at creation and verified against trusted public keys during audit (no in-flight signature forgery).
 
 ### Known Prototype Limitations & Production Roadmap
 1. **Container vs. MicroVM Isolation:**  
@@ -223,6 +224,8 @@ To maintain absolute credibility, Bayora Shield explicitly distinguishes **empir
    The current Blue Team engine uses deterministic regex filters in `base_guardrails.json`. While 100% reproducible for CI/CD, regex is vulnerable to complex token obfuscation. *Production Roadmap:* Pair regex filters with local embedding-similarity classifiers and LLM-as-a-judge secondary verification.
 3. **Mock Provider vs. Live LLM Sampling:**  
    The default evaluation pipeline uses a deterministic mock model provider so the system functions offline without external API keys. Benchmarked latency (<5ms) reflects local IPC overhead, not real cloud LLM generation time (300ms–2000ms).
+4. **Prototype Key Custody:**  
+   The prototype uses configured development Ed25519 signing keys and an in-memory trusted `KeyRegistry` supporting key rotation. In production, signing keys must be held within a FIPS 140-2 Level 3 Hardware Security Module (HSM) or AWS KMS / GCP Cloud KMS with hardware enclave attestation.
 
 ---
 

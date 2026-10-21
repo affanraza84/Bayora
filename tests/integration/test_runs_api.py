@@ -12,7 +12,7 @@ from sqlalchemy import update
 
 from services.control_plane.main import app
 from services.control_plane.db.session import init_db, AsyncSessionLocal, engine
-from services.control_plane.db.models import AuditEvent, Base
+from services.control_plane.db.models import AuditEvent, AuditCheckpoint, EvidenceBundle, Base
 from services.control_plane.auth.jwt import create_access_token
 
 
@@ -230,6 +230,92 @@ class TestControlPlaneAPI(unittest.IsolatedAsyncioTestCase):
                     update(AuditEvent).where(AuditEvent.sequence_number == 1).values(decision="ALLOW")
                 )
                 await session.commit()
+
+    async def test_09_stored_checkpoint_tamper_detection(self):
+        headers_auditor = {"Authorization": f"Bearer {self.auditor_token}"}
+
+        # 1. Verification of valid stored checkpoint succeeds
+        verify_res = await self.client.post(
+            "/api/audit/verify",
+            json={"start_sequence": 1, "verify_ed25519_signatures": True},
+            headers=headers_auditor,
+        )
+        self.assertEqual(verify_res.status_code, 200)
+        self.assertEqual(verify_res.json()["ed25519_signature_status"], "VERIFIED")
+
+        # 2. Tamper directly with the stored checkpoint root hash in the database
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                update(AuditCheckpoint).values(root_hash="0" * 64)
+            )
+            await session.commit()
+
+        try:
+            # Verification must detect the mismatch between computed chain root and stored checkpoint root
+            tampered_res = await self.client.post(
+                "/api/audit/verify",
+                json={"start_sequence": 1, "verify_ed25519_signatures": True},
+                headers=headers_auditor,
+            )
+            self.assertEqual(tampered_res.status_code, 422)
+            err = tampered_res.json()["detail"]
+            self.assertEqual(err["verification_status"], "TAMPERING_DETECTED")
+            self.assertEqual(err["error_code"], "CHECKPOINT_HASH_MISMATCH")
+        finally:
+            # Restore checkpoint root hash
+            async with AsyncSessionLocal() as session:
+                from sqlalchemy import select
+                res = await session.execute(select(AuditEvent).order_by(AuditEvent.sequence_number.desc()))
+                latest_ev = res.scalars().first()
+                if latest_ev:
+                    await session.execute(
+                        update(AuditCheckpoint).values(root_hash=latest_ev.event_hash)
+                    )
+                    await session.commit()
+
+    async def test_10_evidence_bundle_verification(self):
+        headers_red = {"Authorization": f"Bearer {self.red_lead_token}"}
+
+        # Fetch latest run ID created in test_03
+        list_res = await self.client.get("/api/runs", headers=headers_red)
+        self.assertEqual(list_res.status_code, 200)
+        runs = list_res.json()["items"]
+        self.assertTrue(len(runs) > 0)
+        run_id = runs[0]["run_id"]
+
+        # Verify evidence bundle
+        verify_res = await self.client.post(f"/api/runs/{run_id}/verify-evidence", headers=headers_red)
+        self.assertEqual(verify_res.status_code, 200)
+        data = verify_res.json()
+        self.assertEqual(data["verification_status"], "VALID")
+        self.assertTrue(data["is_trusted_key"])
+        self.assertTrue(data["ed25519_signature_valid"])
+
+        # Tamper with the stored evidence signature
+        original_sig = None
+        async with AsyncSessionLocal() as session:
+            from sqlalchemy import select
+            b_res = await session.execute(select(EvidenceBundle).where(EvidenceBundle.run_id == run_id))
+            bundle = b_res.scalar_one_or_none()
+            if bundle:
+                original_sig = bundle.ed25519_signature
+                bad_sig = ("0" if original_sig[0] != "0" else "1") + original_sig[1:]
+                await session.execute(
+                    update(EvidenceBundle).where(EvidenceBundle.run_id == run_id).values(ed25519_signature=bad_sig)
+                )
+                await session.commit()
+
+        try:
+            tampered_res = await self.client.post(f"/api/runs/{run_id}/verify-evidence", headers=headers_red)
+            self.assertEqual(tampered_res.status_code, 422)
+            self.assertEqual(tampered_res.json()["detail"]["error_code"], "INVALID_SIGNATURE")
+        finally:
+            if original_sig:
+                async with AsyncSessionLocal() as session:
+                    await session.execute(
+                        update(EvidenceBundle).where(EvidenceBundle.run_id == run_id).values(ed25519_signature=original_sig)
+                    )
+                    await session.commit()
 
 
 if __name__ == "__main__":

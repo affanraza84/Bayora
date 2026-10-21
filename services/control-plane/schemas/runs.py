@@ -1,10 +1,12 @@
 """
 Pydantic Schemas for Evaluation Runs
+Explicitly distinguishes input blocks, output redactions, model safety findings,
+and infrastructure escapes to avoid conflating model vulnerabilities with container escapes.
 """
 
 from datetime import datetime
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class RunCreate(BaseModel):
@@ -26,6 +28,10 @@ class RunProgress(BaseModel):
     completed_tests: int
     blocked_count: int
     breach_count: int
+    input_blocked_count: int = 0
+    output_redacted_count: int = 0
+    model_safety_findings_count: int = 0
+    infrastructure_escape_count: int = 0
 
 
 class RunResponse(BaseModel):
@@ -37,13 +43,18 @@ class RunResponse(BaseModel):
     policy_version_label: Optional[str] = "v1.0-default"
     total_tests: int = 0
     blocked_count: int = 0
+    # Explicit semantic fields
+    input_blocked_count: int = 0
+    output_redacted_count: int = 0
+    model_safety_findings_count: int = 0
+    infrastructure_escape_count: int = 0
+    # Backward-compatible mapping: breach_count == model_safety_findings_count
     breach_count: int = 0
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RunDetailResponse(RunResponse):
@@ -53,3 +64,15 @@ class RunDetailResponse(RunResponse):
 class RunListResponse(BaseModel):
     total: int
     items: List[RunResponse]
+
+
+class EvidenceVerifyResponse(BaseModel):
+    verification_status: str
+    run_id: str
+    bundle_checksum_sha256: str
+    signer_key_id: str
+    is_trusted_key: bool
+    ed25519_signature_valid: bool
+    chain_root_hash_matches: bool
+    verified_at: datetime
+    message: str

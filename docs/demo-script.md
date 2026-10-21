@@ -11,7 +11,7 @@
 ### **[0:00 - 0:25] 1. The Security Problem & Proposed Solution**
 - **Presenter Spoken:**  
   *"Modern AI red-teaming has a serious trust problem. When companies hire external red teams or adversarial evaluation services, both sides face competing security risks: the red team cannot expose their proprietary exploit datasets and zero-day prompts, while the blue team cannot expose their internal model system prompts, sensitive training data, or private guardrail configurations. Most current evaluation frameworks run everything in a single Python process or unconstrained container where artifacts easily leak across boundaries.*  
-  *Bayora Shield solves this through hardware-isolated multi-enclave architecture: Red Team, Blue Team, and Model Gateway execute in mutually untrusted, resource-constrained container enclaves mediated by a trusted control plane with a tamper-evident cryptographic audit ledger."*
+  *Bayora Shield solves this through container-isolated multi-enclave architecture: Red Team, Blue Team, and Model Gateway execute in mutually untrusted, resource-constrained container enclaves mediated by a trusted control plane with a tamper-evident cryptographic audit ledger."*
 - **Visual Action:**  
   Display the **Architecture Diagram** in README or the **Enclave Topology** tab in the Dashboard (`http://localhost:3000`). Show the three isolated enclaves (Red, Blue, Model Gateway) separated by internal Linux bridge networks.
 
@@ -68,9 +68,9 @@
   - Docker socket access denied.
   - Worker root filesystem write blocked (`Read-only file system`).
 - **Presenter Spoken:**  
-  *"Next, let's verify audit integrity in the Audit Explorer. Every action is recorded in an immutable SHA-256 hash chain and periodically signed using an asymmetric Ed25519 private key held strictly in the audit enclave.*  
-  *I'll click 'Verify Cryptographic Chain'. The verifier recomputes all SHA-256 hashes from genesis. Notice: `Chain Continuity: INTACT` and `Ed25519 Signature: VERIFIED`.*  
-  *If a malicious insider or attacker modifies even a single byte in PostgreSQL, the mathematical chain breaks and alerts immediately."*
+  *"Next, let's verify audit integrity in the Audit Explorer. Every action is recorded in an immutable SHA-256 hash chain and anchored with Ed25519 digital signatures using development key material managed by the audit service and validated against a trusted public key registry.*  
+  *I'll click 'Verify Cryptographic Chain'. The verifier recomputes all SHA-256 hashes from genesis. Notice: `Chain Continuity: INTACT` and `Stored Checkpoint Signature: VERIFIED`.*  
+  *If a malicious insider or attacker modifies even a single byte in PostgreSQL or tampers with the stored checkpoint root hash, the mathematical chain breaks and alerts immediately."*
 - **Visual Action:**  
   Switch to **Audit Explorer** tab. Click **"Verify Cryptographic Chain"**. Show green `VALID` badge, zero sequence gaps, and Ed25519 signature confirmation.
 
@@ -79,8 +79,8 @@
 ### **[2:35 - 3:00] 6. Measured Performance, Limitations & Next Steps**
 - **Presenter Spoken:**  
   *"Finally, our Performance metrics:*  
-  *- Guardrail overhead: **1.4 ms** median.*  
-  *- End-to-end pipeline: **12.5 ms** with mock provider.*  
+  *- Guardrail overhead: **1.4 ms** median measured on local synthetic regex checks.*  
+  *- End-to-end pipeline: **12.5 ms** measured using the deterministic mock model provider.*  
   *- Worker memory constrained to **512 MB** and **1.0 CPU**.*  
   *In full transparency, this prototype uses Linux container namespaces (Docker cgroups, seccomp, AppArmor). Our production roadmap replaces Docker with AWS Nitro Enclaves and Firecracker MicroVMs, connects live vLLM/OpenAI endpoints, and integrates AWS KMS for hardware-enforced Ed25519 key signing.*  
   *Bayora Shield makes AI red teaming verifiable, isolated, and safe. Thank you!"*
@@ -119,4 +119,4 @@ To demonstrate automated verification in under 3 seconds to a technical judge:
 ```bash
 pytest
 ```
-Expected output: `57 passed in ~2.0s`.
+Expected output: `62 passed in ~2.0s`.

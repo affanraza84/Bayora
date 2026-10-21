@@ -56,6 +56,7 @@ class Tenant(Base):
     findings: Mapped[List["Finding"]] = relationship("Finding", back_populates="tenant", cascade="all, delete-orphan")
     artifacts: Mapped[List["Artifact"]] = relationship("Artifact", back_populates="tenant", cascade="all, delete-orphan")
     audit_events: Mapped[List["AuditEvent"]] = relationship("AuditEvent", back_populates="tenant", cascade="all, delete-orphan")
+    audit_checkpoints: Mapped[List["AuditCheckpoint"]] = relationship("AuditCheckpoint", back_populates="tenant", cascade="all, delete-orphan")
 
 
 class User(Base):
@@ -317,3 +318,35 @@ class EvidenceBundle(Base):
     )
 
     run: Mapped["EvaluationRun"] = relationship("EvaluationRun", back_populates="evidence_bundle")
+
+
+class AuditCheckpoint(Base):
+    __tablename__ = "audit_checkpoints"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    start_sequence: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"), nullable=False
+    )
+    end_sequence: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"), nullable=False
+    )
+    root_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=get_utc_now, nullable=False
+    )
+    signer_key_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    ed25519_signature: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=get_utc_now, nullable=False
+    )
+
+    tenant: Mapped["Tenant"] = relationship("Tenant", back_populates="audit_checkpoints")
+
+    __table_args__ = (
+        Index("idx_checkpoints_tenant_seq", "tenant_id", "start_sequence", "end_sequence"),
+    )

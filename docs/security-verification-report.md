@@ -1,7 +1,7 @@
 # Bayora Shield: Security Hardening & Independent Verification Report
 
 **Date:** 2026-10-21  
-**Target:** Bayora Shield Hackathon Release (Phase 4: Security Hardening & Readiness)  
+**Target:** Bayora Shield Hackathon Release (Phase 7: Security Evidence & Demo Reliability)  
 **Author:** Antigravity AI Security Engineering  
 **Scope:** Control Plane API, Authentication & RBAC, Tamper-Evident Audit Service, Blue-Team Guardrail Engine, Live Docker Enclave Container Isolation, and Next.js Security Dashboard.
 
@@ -12,11 +12,11 @@
 | Component | Status | Verification Summary |
 | :--- | :---: | :--- |
 | **Authentication & RBAC** | **VERIFIED** | Strict JWT validation (HS256 only; `none` algorithm rejected; issuer/audience/expiry enforced; role boundaries verified). |
-| **Cryptographic Audit Ledger** | **VERIFIED** | SHA-256 hash-chaining with sequence monotonicity; deletion, reordering, and injection tamper-detection; Ed25519 digital checkpoint signatures. |
+| **Cryptographic Audit Ledger** | **VERIFIED** | SHA-256 hash-chaining with sequence monotonicity; deletion, reordering, and injection tamper-detection; genuine stored Ed25519 digital checkpoint signatures verified against trusted `KeyRegistry` (no in-flight signing). |
 | **Blue-Team Guardrail Engine** | **VERIFIED** | Pre-inference override block (INP-001/002/003); post-inference canary leak detection & redaction (OUT-001/002); benign queries permitted without false positives. |
 | **Live Docker Runtime Isolation** | **VERIFIED** | L3 kernel unreachability (`OSError: [Errno 101] Network is unreachable`), DNS segmentation, read-only root filesystems, absent Docker socket, and cgroup v2 limits (512MB RAM, 1.0 CPU) proven live. |
-| **Evaluation Pipeline** | **VERIFIED** | Multi-phase adversarial runner; stateless model gateway isolation; automated finding generation (CWE-200); Ed25519 evidence bundle signing. |
-| **API Route Consistency** | **VERIFIED** | Unified `/api/audit/verify` and alias `/api/audit-events/verify`; scenario ID alias resolution; strict tenant scoping. |
+| **Evaluation Pipeline** | **VERIFIED** | Multi-phase adversarial runner; stateless model gateway isolation; automated finding generation (CWE-200); genuine stored Ed25519 evidence bundle signing and verification. |
+| **API Route & Semantic Consistency** | **VERIFIED** | Explicit outcome semantics (`input_blocked_count`, `output_redacted_count`, `model_safety_findings_count`, `infrastructure_escape_count`); zero conflation between model findings and container escapes. |
 | **Dashboard Integration** | **VERIFIED** | Production Next.js build validated; live status indicators; colorized tamper alerts; explicit synthetic mock disclaimers. |
 
 ---
@@ -25,19 +25,16 @@
 
 | File Modified / Created | Change Summary | Rationale |
 | :--- | :--- | :--- |
-| [`tests/integration/test_runs_api.py`](file:///Users/affanraza/Developer/Bayora/tests/integration/test_runs_api.py) | Added clean DB initialization in `setUpClass` and wrapped `test_08` tamper injection in `try...finally`. | Fixes non-idempotent test runs where database tampering permanently altered sequence 1 on disk, failing subsequent test executions. |
-| [`services/control-plane/routers/audit.py`](file:///Users/affanraza/Developer/Bayora/services/control-plane/routers/audit.py) | Added `audit_events_router` alias supporting both `/api/audit/verify` and `/api/audit-events/verify`. | Resolves API route discrepancy between frontend callers and backend definitions. |
-| [`services/control-plane/main.py`](file:///Users/affanraza/Developer/Bayora/services/control-plane/main.py) | Mounted `audit_events_router` on FastAPI application. | Ensures zero 404s for any legacy or alternate client route calls. |
-| [`services/audit-service/hasher.py`](file:///Users/affanraza/Developer/Bayora/services/audit-service/hasher.py) | Enforced strict sequence monotonicity check (`seq == prev_event['sequence_number'] + 1`) in `verify_chain`. | Prevents attackers from deleting or inserting events in the audit trail without triggering an immediate sequence gap alarm. |
-| [`tests/unit/test_audit_crypto.py`](file:///Users/affanraza/Developer/Bayora/tests/unit/test_audit_crypto.py) | Added unit tests for event deletion, event reordering, and rogue event injection. | Verifies all tamper-detection failure modes under automated unit test assertions. |
-| [`tests/unit/test_auth_rbac.py`](file:///Users/affanraza/Developer/Bayora/tests/unit/test_auth_rbac.py) | Added negative tests for algorithm `none`, invalid issuer, invalid audience, missing required claims, and cross-role permission checks. | Hardens JWT decoding against algorithm-confusion and signature-bypass attacks. |
-| [`tests/isolation/test_live_docker_isolation.py`](file:///Users/affanraza/Developer/Bayora/tests/isolation/test_live_docker_isolation.py) | Added raw L3 IP connectivity probes, Linux cgroup v2 resource limit inspection, and host port binding verification. | Distinguishes DNS resolution failure from raw kernel IP unreachability; validates memory and CPU limits inside running containers. |
-| [`tests/adversarial/test_guardrail_adversarial.py`](file:///Users/affanraza/Developer/Bayora/tests/adversarial/test_guardrail_adversarial.py) | Added comprehensive adversarial and benign guardrail test suite. | Proves detection of synthetic injection, roleplay escape, credential harvesting, canary leakage, while confirming zero false positives on benign queries. |
-| [`services/control-plane/routers/isolation.py`](file:///Users/affanraza/Developer/Bayora/services/control-plane/routers/isolation.py) | Added scenario identifier alias normalization (`SCN-CROSS-TENANT-ARTIFACT`, `ISO-SCEN-*`). | Allows scenarios to be executed via standard or alternate catalog IDs. |
-| [`apps/dashboard/app/page.tsx`](file:///Users/affanraza/Developer/Bayora/apps/dashboard/app/page.tsx) | Upgraded audit verification display with red/green conditional formatting and detailed tamper alarm messages. | Delivers clear visual feedback during hackathon judging if audit tampering occurs. |
-| [`.env.example`](file:///Users/affanraza/Developer/Bayora/.env.example) | Set default `DATABASE_URL` to local async SQLite with PostgreSQL commented out for Docker Compose. | Guarantees fresh checkout immediately works without requiring external PostgreSQL setup. |
-| [`scripts/check-prereqs.sh`](file:///Users/affanraza/Developer/Bayora/scripts/check-prereqs.sh) | Updated secret scanner to distinguish Git-tracked committed secrets from local `.env` files protected by `.gitignore`. | Prevents false positives when developers initialize local `.env` from template. |
-| [`scripts/demo.sh`](file:///Users/affanraza/Developer/Bayora/scripts/demo.sh) | Created 9-step automated judge demonstration script. | Automates end-to-end evaluation, testing, run execution, scenario probing, and audit verification. |
+| [`services/control-plane/db/models.py`](file:///Users/affanraza/Developer/Bayora/services/control-plane/db/models.py) | Created `AuditCheckpoint` SQLAlchemy model with `(id, tenant_id, start_sequence, end_sequence, root_hash, timestamp, signer_key_id, ed25519_signature)`. | Persists signed checkpoints at creation time so audit verification tests authentic history rather than generating ephemeral signatures. |
+| [`alembic/versions/0002_add_audit_checkpoints.py`](file:///Users/affanraza/Developer/Bayora/alembic/versions/0002_add_audit_checkpoints.py) | Added migration script for `audit_checkpoints` table with indexes on `(tenant_id, end_sequence)`. | Manages schema evolution safely and cleanly across development and production databases. |
+| [`services/audit-service/keys.py`](file:///Users/affanraza/Developer/Bayora/services/audit-service/keys.py) | Implemented `KeyRegistry` managing active signing keys and trusted public verification keys, with documented dev key material and key rotation support. | Eliminates startup ephemeral keypair generation; verifies checkpoints against trusted public keys without creating key files that trigger secret scanners. |
+| [`services/control-plane/routers/audit.py`](file:///Users/affanraza/Developer/Bayora/services/control-plane/routers/audit.py) | Added `POST /api/audit/checkpoints` endpoint and refactored `POST /api/audit/verify`. | Recomputes SHA-256 hash chain independently, retrieves stored checkpoint from DB, verifies stored Ed25519 signature against trusted key registry, and rejects unknown keys, altered signatures, or hash mismatches. |
+| [`services/control-plane/routers/runs.py`](file:///Users/affanraza/Developer/Bayora/services/control-plane/routers/runs.py) | Updated run completion to persist `AuditCheckpoint` and `EvidenceBundle` with active signing key; added `POST /api/runs/{run_id}/verify-evidence` endpoint; added explicit semantic outcome fields. | Guarantees evidence bundles are verified from stored database state rather than generated in-flight; prevents model-safety findings from being miscounted as infrastructure escapes. |
+| [`services/control-plane/schemas/runs.py`](file:///Users/affanraza/Developer/Bayora/services/control-plane/schemas/runs.py) | Added explicit outcome fields (`input_blocked_count`, `output_redacted_count`, `model_safety_findings_count`, `infrastructure_escape_count`, `breach_count`) with `ConfigDict(from_attributes=True)`. | Establishes unambiguous API contract differentiating guardrail actions, model findings, and infrastructure escapes. |
+| [`tests/unit/test_audit_crypto.py`](file:///Users/affanraza/Developer/Bayora/tests/unit/test_audit_crypto.py) | Added 3 unit tests: `test_key_registry_trusted_and_untrusted`, `test_key_rotation_preserves_historical_verification`, and `test_stored_checkpoint_tamper_detection`. | Proves key registry enforcement, rotation historical validity, and tamper detection on stored checkpoints. |
+| [`tests/integration/test_runs_api.py`](file:///Users/affanraza/Developer/Bayora/tests/integration/test_runs_api.py) | Added 2 integration tests: `test_09_stored_checkpoint_tamper_detection` (422 `CHECKPOINT_HASH_MISMATCH`) and `test_10_evidence_bundle_verification` (stored signature verification). | Demonstrates end-to-end stored checkpoint and evidence bundle verification and tamper rejection against SQLite/Postgres. |
+| [`scripts/demo.sh`](file:///Users/affanraza/Developer/Bayora/scripts/demo.sh) | Enforced honest failure modes: Docker check exits with `BLOCKED`, removed unsafe `alembic stamp head` fallback, enforced strict HTTP status checks on isolation scenarios, added real stored checkpoint/evidence verification assertions, and accurately labeled execution paths. | Prevents silent failures or false passes during demonstration; ensures the script fails immediately if any security check fails. |
+| [`docs/demo-script.md`](file:///Users/affanraza/Developer/Bayora/docs/demo-script.md) & [`README.md`](file:///Users/affanraza/Developer/Bayora/README.md) | Corrected technical claims: replaced "hardware-isolated" with "container-isolated", qualified synthetic benchmarks, and clarified prototype key custody. | Eliminates misleading claims regarding hardware enclaves or live cloud LLM latencies. |
 
 ---
 
@@ -49,13 +46,13 @@ Automated testing was executed using Python 3.14 on macOS with Docker Compose ac
 ================================== TEST TOTALS ==================================
   Suite Category                   Total Tests    Passed    Failed    Blocked
   -----------------------------------------------------------------------------
-  1. Unit Tests (Crypto, RBAC)              25        25         0          0
+  1. Unit Tests (Crypto, RBAC)              28        28         0          0
   2. Enclave Isolation Tests (Docker)       11        11         0          0
   3. Adversarial & Guardrails               10        10         0          0
-  4. Integration Tests (API, DB)             8         8         0          0
+  4. Integration Tests (API, DB)            10        10         0          0
   5. Performance Tests (Benchmarks)          3         3         0          0
   -----------------------------------------------------------------------------
-  TOTAL AUTOMATED TESTS                     57        57         0          0
+  TOTAL AUTOMATED TESTS                     62        62         0          0
 =================================================================================
 ```
 
@@ -68,8 +65,8 @@ Bayora Shield differentiates three cryptographic mechanisms across three operati
    - **Guarantee:** Strict Merkle-style chronological chain continuity. Every event binds `H_i = SHA256(canonical_json(previous_hash, sequence_number, ...))`. Detects in-database row mutation, event deletion, or reordering.
    - **Boundary Limitation:** A hash chain alone does not prevent an attacker with full database write access from recomputing a fake alternate history branch from scratch unless anchored to an external signature.
 2. **Ed25519 Digital Checkpoint Signatures (`cryptography.hazmat...ed25519`):**
-   - **Operational Domain:** Audit checkpoints and exported `EvidenceBundle` archives.
-   - **Guarantee:** Asymmetric non-repudiation. Private signing keys are held strictly in memory/isolated volumes (`/etc/bayora/keys`) and never written to database tables. Checkpoint payloads `(start_seq, end_seq, root_hash, timestamp)` are signed with Ed25519. Even an attacker with complete PostgreSQL write access cannot forge an Ed25519 signature over modified events.
+   - **Operational Domain:** Audit checkpoints (`AuditCheckpoint` table) and exported `EvidenceBundle` records.
+   - **Guarantee:** Asymmetric non-repudiation. Signed checkpoints bind `(start_seq, end_seq, root_hash, timestamp, signer_key_id)`. During verification, the system loads the previously persisted checkpoint from the database and verifies its signature against the trusted `KeyRegistry`. Verification does **not** generate replacement signatures on the fly.
 3. **HMAC-SHA256 Symmetric Tokens (`PyJWT` / HS256):**
    - **Operational Domain:** User authentication sessions and internal service identity assertion.
    - **Guarantee:** Fast bearer token authorization and RBAC role validation with issuer (`bayora-shield`) and audience (`bayora-shield-api`) verification.
@@ -139,6 +136,12 @@ Probes were executed via `docker exec` against the running multi-enclave Docker 
 3. **Scenario Identifier Aliases:**
    - *Discovery:* Different callers requested `SCN-CROSS-TENANT-ARTIFACT` vs `SCN-TENANT-ISOLATION`.
    - *Resolution:* Updated `isolation.py` router to accept both names as valid scenario IDs.
+4. **Tautological In-Flight Checkpoint Signing:**
+   - *Discovery:* `/api/audit/verify` generated a fresh Ed25519 keypair at startup, created a replacement signature over the current state during the verification request, and checked that freshly minted signature. This did not prove that historical checkpoints were signed by a trusted authority.
+   - *Resolution:* Created `AuditCheckpoint` persistence table. Checkpoints and evidence bundles are signed at creation time with active key material from `KeyRegistry`. Verification loads the stored checkpoint from the database and verifies its stored signature against registered trusted public keys without creating any replacement signatures.
+5. **Conflation of Model Findings with Infrastructure Escapes:**
+   - *Discovery:* Earlier reports labelled detected canary token disclosures as "breaches", confusing application-layer model leaks (CWE-200) with container escapes.
+   - *Resolution:* Introduced explicit semantic counters (`input_blocked_count`, `output_redacted_count`, `model_safety_findings_count`, `infrastructure_escape_count = 0`), updated dashboard copy, and verified 0 infrastructure escapes across all runs.
 
 ---
 
@@ -156,7 +159,7 @@ docker compose -f infrastructure/compose/docker-compose.yml up -d
 # 3. Apply database schema migrations
 .venv/bin/alembic upgrade head
 
-# 4. Run automated security test suite (57 tests)
+# 4. Run automated security test suite (62 tests)
 make test-security
 
 # 5. Run end-to-end automated demo script
@@ -180,3 +183,6 @@ cd apps/dashboard && npm run dev
 3. **Mock Model Determinism vs. External LLM Non-Determinism:**
    - *Current Implementation:* Mock model provider ensures 100% reproducible, offline evaluation without API key dependencies.
    - *Limitation:* Real upstream LLMs exhibit probabilistic responses, non-deterministic token sampling, and multi-turn indirect jailbreaks that require ongoing adaptive adversarial probes.
+4. **Prototype Key Custody & Enclave Attestation:**
+   - *Current Implementation:* Stable development Ed25519 key material with in-memory `KeyRegistry` supporting key rotation and multi-key trust.
+   - *Limitation:* The signing keys are stored in software configuration rather than a dedicated hardware security module (HSM). Production implementations should store asymmetric signing keys inside AWS KMS / GCP Cloud KMS with nitro enclave attestation or a FIPS 140-2 Level 3 HSM.

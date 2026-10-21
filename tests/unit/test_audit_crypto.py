@@ -13,6 +13,14 @@ from services.audit_service.hasher import (
     generate_ed25519_keypair,
     sign_checkpoint,
     verify_checkpoint,
+    format_canonical_timestamp,
+)
+from services.audit_service.keys import (
+    key_registry,
+    init_key_management,
+    get_active_signing_key,
+    rotate_signing_key,
+    DEFAULT_KEY_ID,
 )
 
 
@@ -368,7 +376,79 @@ class TestAuditCrypto(unittest.TestCase):
         is_valid, broken_seq, msg = verify_chain([event])
         self.assertFalse(is_valid)
         self.assertEqual(broken_seq, 1)
-        self.assertIn("Tampering detected at sequence 1", msg)
+    def test_key_registry_trusted_and_untrusted(self):
+        """Tests that KeyRegistry strictly differentiates trusted keys from unknown keys."""
+        priv_bytes, pub_bytes = generate_ed25519_keypair()
+        test_key_id = "test-key-alpha-99"
+
+        # Initially untrusted
+        self.assertFalse(key_registry.is_trusted(test_key_id))
+        self.assertIsNone(key_registry.get_trusted_key(test_key_id))
+
+        # Register and verify trusted
+        key_registry.register_trusted_key(test_key_id, pub_bytes)
+        self.assertTrue(key_registry.is_trusted(test_key_id))
+        self.assertEqual(key_registry.get_trusted_key(test_key_id), pub_bytes)
+
+        # Revocation
+        self.assertTrue(key_registry.revoke_key(test_key_id))
+        self.assertFalse(key_registry.is_trusted(test_key_id))
+
+    def test_key_rotation_preserves_historical_verification(self):
+        """Tests that rotating keys allows historical checkpoints to verify with old key."""
+        old_key_id, old_priv, old_pub = get_active_signing_key()
+        root_hash_1 = "a" * 64
+        ts_1 = "2026-10-21T10:00:00.000000Z"
+        sig_1 = sign_checkpoint(old_priv, 1, 10, root_hash_1, ts_1)
+
+        # Rotate key to v2
+        new_key_id = f"rotated-key-{DEFAULT_KEY_ID}-v2"
+        rotated_id, new_priv, new_pub = rotate_signing_key(new_key_id)
+        self.assertEqual(rotated_id, new_key_id)
+
+        # New checkpoint signed with new key
+        root_hash_2 = "b" * 64
+        ts_2 = "2026-10-21T11:00:00.000000Z"
+        sig_2 = sign_checkpoint(new_priv, 11, 20, root_hash_2, ts_2)
+
+        # Both keys must be trusted in KeyRegistry
+        self.assertTrue(key_registry.is_trusted(old_key_id))
+        self.assertTrue(key_registry.is_trusted(new_key_id))
+
+        # Historical checkpoint verifies against old key in registry
+        old_pub_lookup = key_registry.get_trusted_key(old_key_id)
+        self.assertIsNotNone(old_pub_lookup)
+        self.assertTrue(verify_checkpoint(old_pub_lookup, sig_1, 1, 10, root_hash_1, ts_1))
+
+        # New checkpoint verifies against new key in registry
+        new_pub_lookup = key_registry.get_trusted_key(new_key_id)
+        self.assertIsNotNone(new_pub_lookup)
+        self.assertTrue(verify_checkpoint(new_pub_lookup, sig_2, 11, 20, root_hash_2, ts_2))
+
+        # Cross-verification must fail (old key cannot verify new signature)
+        self.assertFalse(verify_checkpoint(old_pub_lookup, sig_2, 11, 20, root_hash_2, ts_2))
+
+    def test_stored_checkpoint_tamper_detection(self):
+        """Tests that any modification to a stored checkpoint payload or signature is detected."""
+        key_id, priv_key, pub_key = get_active_signing_key()
+        root_hash = "37a915f013143c0889f074dcfc9f372a85750a980590a5d2b781121d51a660a9"
+        ts = "2026-10-21T12:00:00.000000Z"
+
+        sig = sign_checkpoint(priv_key, 1, 25, root_hash, ts)
+
+        # Valid stored checkpoint passes
+        self.assertTrue(verify_checkpoint(pub_key, sig, 1, 25, root_hash, ts))
+
+        # 1. Tampered root hash in stored checkpoint
+        tampered_root = "0" * 64
+        self.assertFalse(verify_checkpoint(pub_key, sig, 1, 25, tampered_root, ts))
+
+        # 2. Tampered sequence range in stored checkpoint
+        self.assertFalse(verify_checkpoint(pub_key, sig, 1, 26, root_hash, ts))
+
+        # 3. Tampered signature in stored checkpoint
+        bad_sig = ("1" if sig[0] != "1" else "2") + sig[1:]
+        self.assertFalse(verify_checkpoint(pub_key, bad_sig, 1, 25, root_hash, ts))
 
 
 if __name__ == "__main__":

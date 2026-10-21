@@ -10,6 +10,7 @@ from services.control_plane.db.models import (
     Artifact,
     AuditEvent,
     EvidenceBundle,
+    AuditCheckpoint,
 )
 from services.control_plane.db.session import engine, AsyncSessionLocal, get_db, init_db
 
@@ -24,6 +25,7 @@ __all__ = [
     "Artifact",
     "AuditEvent",
     "EvidenceBundle",
+    "AuditCheckpoint",
     "engine",
     "AsyncSessionLocal",
     "get_db",
